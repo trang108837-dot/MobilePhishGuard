@@ -117,12 +117,22 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+// Đã sửa: Lấy CSRF token an toàn (không bị crash nếu thiếu input token)
+function getCSRFToken() {
+  const el = document.querySelector('[name=csrfmiddlewaretoken]');
+  if (el) return el.value;
+  const match = document.cookie.match(/csrftoken=([^;]+)/);
+  return match ? match[1] : '';
+}
+
 const LABELS = { safe: "✅ AN TOÀN", suspicious: "⚠️ ĐÁNG NGHI", phishing: "🚨 NGUY HIỂM – LỪA ĐẢO" };
 
 function setTab(qr) {
-  $("tabUrl").classList.toggle("active", !qr); $("tabQr").classList.toggle("active", qr);
-  $("paneUrl").classList.toggle("hidden", qr); $("paneQr").classList.toggle("hidden", !qr);
+  $("tabUrl").classList.toggle("active", !qr); 
+  $("tabQr").classList.toggle("active", qr);
+  $("paneUrl").classList.toggle("hidden", qr); 
+  $("paneQr").classList.toggle("hidden", !qr);
   $("err").textContent = "";
 }
 $("tabUrl").onclick = () => setTab(false);
@@ -137,6 +147,8 @@ function render(d) {
   $("verdictText").textContent = LABELS[d.verdict];
   $("riskPct").textContent = d.risk_score + "%";
   $("riskBar").style.width = d.risk_score + "%";
+  
+  // Đã sửa: Bổ sung dấu trừ (-) bị thiếu giữa 100 và d.risk_score
   $("riskSub").textContent = `Độ an toàn: ${100 - d.risk_score}%  ·  Điểm rủi ro: ${d.risk_score} / 100`;
 
   $("dlOn").classList.toggle("hidden", !d.dl_active);
@@ -161,30 +173,61 @@ function render(d) {
   $("result").scrollIntoView({ behavior: "smooth" });
 }
 
+// Đã sửa: Xử lý an toàn khi Server sập (502/500) không trả về JSON
 async function call(btn, fn) {
-  const old = btn.textContent; btn.disabled = true; btn.textContent = "Đang phân tích...";
+  const old = btn.textContent; 
+  btn.disabled = true; 
+  btn.textContent = "Đang phân tích...";
+  $("err").textContent = "";
+
   try {
-    const r = await fn(); const d = await r.json();
-    if (!r.ok) { $("err").textContent = d.error || "Có lỗi xảy ra"; } else render(d);
-  } catch (e) { $("err").textContent = "Không kết nối được máy chủ"; }
-  btn.disabled = false; btn.textContent = old;
+    const r = await fn();
+    let d;
+    try {
+      d = await r.json();
+    } catch (parseErr) {
+      throw new Error(`Máy chủ gặp lỗi (${r.status}). Vui lòng kiểm tra trang Logs trên Railway.`);
+    }
+
+    if (!r.ok) { 
+      $("err").textContent = d.error || `Lỗi máy chủ (${r.status})`; 
+    } else {
+      render(d);
+    }
+  } catch (e) {
+    console.error("Lỗi gửi yêu cầu:", e);
+    $("err").textContent = e.message.includes("Railway") ? e.message : "Không kết nối được máy chủ";
+  } finally {
+    btn.disabled = false; 
+    btn.textContent = old;
+  }
 }
 
 $("scanBtn").onclick = () => {
   const url = $("urlInput").value.trim();
   if (!url) { $("err").textContent = "Hãy nhập URL"; return; }
   call($("scanBtn"), () => fetch("/api/scan/", {
-    method: "POST", headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
+    method: "POST", 
+    headers: { 
+      "Content-Type": "application/json", 
+      "X-CSRFToken": getCSRFToken() 
+    },
     body: JSON.stringify({ url })
   }));
 };
+
 $("urlInput").addEventListener("keydown", e => { if (e.key === "Enter") $("scanBtn").click(); });
 
 $("qrBtn").onclick = () => {
   const f = $("qrInput").files[0];
   if (!f) { $("err").textContent = "Hãy chọn hoặc chụp ảnh mã QR"; return; }
-  const fd = new FormData(); fd.append("image", f);
-  call($("qrBtn"), () => fetch("/api/qr/", { method: "POST", headers: { "X-CSRFToken": csrf }, body: fd }));
+  const fd = new FormData(); 
+  fd.append("image", f);
+  call($("qrBtn"), () => fetch("/api/qr/", { 
+    method: "POST", 
+    headers: { "X-CSRFToken": getCSRFToken() }, 
+    body: fd 
+  }));
 };
 </script>
 </body>
