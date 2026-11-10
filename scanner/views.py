@@ -3,6 +3,7 @@ import json
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 from .analyzer import analyze
 
@@ -10,7 +11,7 @@ from .analyzer import analyze
 def index(request):
     return render(request, "scanner/index.html")
 
-
+@csrf_exempt
 @require_POST
 def api_scan(request):
     try:
@@ -21,7 +22,7 @@ def api_scan(request):
         return JsonResponse({"error": "Vui lòng nhập URL hợp lệ (tối đa 2048 ký tự)"}, status=400)
     return JsonResponse(analyze(url))
 
-
+@csrf_exempt
 @require_POST
 def api_qr(request):
     f = request.FILES.get("image")
